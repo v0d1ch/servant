@@ -22,6 +22,7 @@ import           Control.Monad.Trans                (MonadIO (..), MonadTrans (.
 import           Control.Monad.Trans.Control        (ComposeSt, MonadBaseControl (..), MonadTransControl (..),
                                                      defaultLiftBaseWith, defaultRestoreM)
 import           Control.Monad.Trans.Resource       (MonadResource (..), ResourceT, runResourceT, transResourceT)
+import           Control.DeepSeq
 import           Network.Wai                        (Application, Request, Response, ResponseReceived)
 import           Prelude                            ()
 import           Prelude.Compat
@@ -89,13 +90,22 @@ instance MonadThrow m => MonadThrow (RouteResultT m) where
     throwM = lift . throwM
 
 
-toApplication :: RoutingApplication -> Application
-toApplication ra request respond = ra request routingRespond
+toApplication :: Bool -> RoutingApplication -> Application
+toApplication fullyEvaluate ra request respond = ra request routingRespond
  where
+  maybeEval x = if fullyEvaluate then rnf x else  x
   routingRespond :: RouteResult Response -> IO ResponseReceived
-  routingRespond (Fail err)      = respond $ responseServantErr err
-  routingRespond (FailFatal err) = respond $ responseServantErr err
-  routingRespond (Route v)       = respond v
+  routingRespond (Fail err)      = respond $ maybeEval $ responseServantErr err
+  routingRespond (FailFatal err) = respond $ maybeEval $ responseServantErr err
+  routingRespond (Route v) =  respond $ maybeEval v
+
+-- toApplication :: RoutingApplication -> Application
+-- toApplication ra request respond = ra request routingRespond
+--  where
+--   routingRespond :: RouteResult Response -> IO ResponseReceived
+--   routingRespond (Fail err)      = respond $ responseServantErr err
+--   routingRespond (FailFatal err) = respond $ responseServantErr err
+--   routingRespond (Route v)       = respond v
 
 -- | A 'Delayed' is a representation of a handler with scheduled
 -- delayed checks that can trigger errors.

@@ -47,6 +47,7 @@ library
     , text
     , unordered-containers
     , control-monad-omega == 0.3.*
+    , deepseq
   if !impl(ghc >= 8.0)
     build-depends:
       semigroups          >=0.16.2.2 && <0.19

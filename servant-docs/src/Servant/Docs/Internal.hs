@@ -27,6 +27,8 @@ import           Control.Arrow              (second)
 import           Control.Lens               (makeLenses, mapped, over, traversed, view, (%~),
                                              (&), (.~), (<>~), (^.), (|>))
 import qualified Control.Monad.Omega        as Omega
+import           Control.DeepSeq
+
 import           Data.ByteString.Lazy.Char8 (ByteString)
 import qualified Data.ByteString.Char8      as BSC
 import qualified Data.CaseInsensitive       as CI
@@ -230,6 +232,9 @@ defResponse = Response
   , _respBody    = []
   , _respHeaders = []
   }
+
+instance NFData Response where
+    rnf a = seq a ()
 
 -- | A datatype that represents everything that can happen
 -- at an endpoint, with its lenses:

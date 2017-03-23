@@ -137,7 +137,7 @@ serve p = serveWithContext p EmptyContext
 serveWithContext :: (HasServer api context)
     => Proxy api -> Context context -> Server api -> Application
 serveWithContext p context server =
-  toApplication (runRouter (route p context (emptyDelayed (Route server))))
+  toApplication True (runRouter (route p context (emptyDelayed (Route server))))
 
 -- | The function 'layout' produces a textual description of the internal
 -- router layout for debugging purposes. Note that the router layout is
