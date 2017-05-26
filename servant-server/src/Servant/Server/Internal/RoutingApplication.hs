@@ -96,6 +96,8 @@ instance MonadThrow m => MonadThrow (RouteResultT m) where
 toApplication :: Bool -> RoutingApplication -> Application
 toApplication fullyEvaluate ra request respond = ra request (maybeEval routingRespond)
  where
+  maybeEval :: (RouteResult Response -> IO ResponseReceived)
+     -> RouteResult Response -> IO ResponseReceived
   maybeEval x = if fullyEvaluate then force x else x
   routingRespond :: RouteResult Response -> IO ResponseReceived
   routingRespond (Fail err)      = respond $ responseServantErr err
