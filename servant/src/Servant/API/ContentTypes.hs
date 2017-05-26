@@ -98,6 +98,10 @@ import           Web.FormUrlEncoded               (FromForm, ToForm,
 import           Prelude                          ()
 import           Prelude.Compat
 
+#if MIN_VERSION_base(4,9,0)
+import qualified GHC.TypeLits                     as TL
+#endif
+
 -- * Provided content types
 data JSON deriving Typeable
 data PlainText deriving Typeable
@@ -181,6 +185,12 @@ instance OVERLAPPABLE_
       where pctyps = Proxy :: Proxy (ct ': cts)
             amrs = allMimeRender pctyps val
             lkup = fmap (\(a,b) -> (a, (fromStrict $ M.renderHeader a, b))) amrs
+
+#if MIN_VERSION_base(4,9,0)
+instance TL.TypeError ('TL.Text "No instance for (), use NoContent instead.")
+  => AllCTRender '[] () where
+  handleAcceptH _ _ _ = error "unreachable"
+#endif
 
 --------------------------------------------------------------------------
 -- * Unrender
@@ -409,6 +419,9 @@ instance MimeUnrender OctetStream BS.ByteString where
 
 
 -- $setup
+-- >>> :set -XFlexibleInstances
+-- >>> :set -XMultiParamTypeClasses
+-- >>> :set -XOverloadedStrings
 -- >>> import Servant.API
 -- >>> import Data.Aeson
 -- >>> import Data.Text

@@ -27,6 +27,7 @@ import Control.Monad.Base (MonadBase (..))
 import Control.Monad.IO.Class ()
 import Control.Monad.Reader
 import Control.Monad.Trans.Control (MonadBaseControl (..))
+import qualified Data.ByteString.Builder as BS
 import Data.ByteString.Lazy hiding (pack, filter, map, null, elem, any)
 import Data.String
 import Data.String.Conversions (cs)
@@ -48,7 +49,8 @@ import Web.HttpApiData
 
 data ServantError
   = FailureResponse
-    { responseStatus            :: Status
+    { failingRequest            :: UrlReq
+    , responseStatus            :: Status
     , responseContentType       :: MediaType
     , responseBody              :: ByteString
     }
@@ -71,7 +73,7 @@ data ServantError
   deriving (Show, Typeable)
 
 instance Eq ServantError where
-  FailureResponse a b c == FailureResponse x y z =
+  FailureResponse _ a b c == FailureResponse _ x y z =
     (a, b, c) == (x, y, z)
   DecodeFailure a b c == DecodeFailure x y z =
     (a, b, c) == (x, y, z)
@@ -85,8 +87,15 @@ instance Eq ServantError where
 
 instance Exception ServantError
 
+data UrlReq = UrlReq BaseUrl Req
+
+instance Show UrlReq where
+  show (UrlReq url req) = showBaseUrl url ++ path ++ "?" ++ show (qs req)
+    where
+      path = cs (BS.toLazyByteString (reqPath req))
+
 data Req = Req
-  { reqPath   :: String
+  { reqPath   :: BS.Builder
   , qs        :: QueryText
   , reqBody   :: Maybe (RequestBody, MediaType)
   , reqAccept :: [MediaType]
@@ -98,7 +107,7 @@ defReq = Req "" [] Nothing [] []
 
 appendToPath :: String -> Req -> Req
 appendToPath p req =
-  req { reqPath = reqPath req ++ "/" ++ p }
+  req { reqPath = reqPath req <> "/" <> toEncodedUrlPiece p }
 
 appendToQueryString :: Text       -- ^ param name
                     -> Maybe Text -- ^ param value
@@ -151,8 +160,9 @@ reqToRequest req (BaseUrl reqScheme reqHost reqPort path) =
                                          , uriRegName = reqHost
                                          , uriPort = ":" ++ show reqPort
                                          }
-                             , uriPath = path ++ reqPath req
+                             , uriPath = fullPath
                              }
+        fullPath = path ++ cs (BS.toLazyByteString (reqPath req))
 
         setrqb r = case reqBody req of
                      Nothing -> r
@@ -224,7 +234,7 @@ runClientM :: ClientM a -> ClientEnv -> IO (Either ServantError a)
 runClientM cm env = runExceptT $ (flip runReaderT env) $ runClientM' cm
 
 
-performRequest :: Method -> Req 
+performRequest :: Method -> Req
                -> ClientM ( Int, ByteString, MediaType
                           , [HTTP.Header], Response ByteString)
 performRequest reqMethod req = do
@@ -250,10 +260,10 @@ performRequest reqMethod req = do
                    Nothing -> throwError $ InvalidContentTypeHeader (cs t) body
                    Just t' -> pure t'
       unless (status_code >= 200 && status_code < 300) $
-        throwError $ FailureResponse status ct body
+        throwError $ FailureResponse (UrlReq reqHost req) status ct body
       return (status_code, body, ct, hdrs, response)
 
-performRequestCT :: MimeUnrender ct result => Proxy ct -> Method -> Req 
+performRequestCT :: MimeUnrender ct result => Proxy ct -> Method -> Req
     -> ClientM ([HTTP.Header], result)
 performRequestCT ct reqMethod req = do
   let acceptCTS = contentTypes ct

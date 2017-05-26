@@ -1,6 +1,7 @@
 {-# LANGUAGE CPP                        #-}
 {-# LANGUAGE ConstraintKinds            #-}
 {-# LANGUAGE DataKinds                  #-}
+{-# LANGUAGE DeriveDataTypeable         #-}
 {-# LANGUAGE FlexibleContexts           #-}
 {-# LANGUAGE FlexibleInstances          #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
@@ -15,8 +16,8 @@
 
 module Servant.Server.Internal
   ( module Servant.Server.Internal
-  , module Servant.Server.Internal.Context
   , module Servant.Server.Internal.BasicAuth
+  , module Servant.Server.Internal.Context
   , module Servant.Server.Internal.Handler
   , module Servant.Server.Internal.Router
   , module Servant.Server.Internal.RoutingApplication
@@ -32,6 +33,7 @@ import           Data.Maybe                 (fromMaybe, mapMaybe)
 import           Data.Either                (partitionEithers)
 import           Data.String                (fromString)
 import           Data.String.Conversions    (cs, (<>))
+import           Data.Tagged                (Tagged(..), untag)
 import qualified Data.Text                  as T
 import           Data.Typeable
 import           GHC.TypeLits               (KnownNat, KnownSymbol, natVal,
@@ -46,12 +48,12 @@ import           Network.Wai                (Application, Request, Response,
                                              responseLBS, vault)
 import           Prelude                    ()
 import           Prelude.Compat
-import           Web.HttpApiData            (FromHttpApiData, parseHeaderMaybe,
+import           Web.HttpApiData            (FromHttpApiData, parseHeader,
                                              parseQueryParam,
                                              parseUrlPieceMaybe,
                                              parseUrlPieces)
 import           Servant.API                 ((:<|>) (..), (:>), BasicAuth, Capture,
-                                              CaptureAll, Verb,
+                                              CaptureAll, Verb, EmptyAPI,
                                               ReflectMethod(reflectMethod),
                                               IsSecure(..), Header, QueryFlag,
                                               QueryParam, QueryParams, Raw,
@@ -280,10 +282,21 @@ instance (KnownSymbol sym, FromHttpApiData a, HasServer api context)
   type ServerT (Header sym a :> api) m =
     Maybe a -> ServerT api m
 
-  route Proxy context subserver =
-    let mheader req = parseHeaderMaybe =<< lookup str (requestHeaders req)
-    in  route (Proxy :: Proxy api) context (passToServer subserver mheader)
-    where str = fromString $ symbolVal (Proxy :: Proxy sym)
+  route Proxy context subserver = route (Proxy :: Proxy api) context $
+      subserver `addHeaderCheck` withRequest headerCheck
+    where
+      headerName = symbolVal (Proxy :: Proxy sym)
+      headerCheck req =
+        case lookup (fromString headerName) (requestHeaders req) of
+          Nothing -> return Nothing
+          Just txt ->
+            case parseHeader txt of
+              Left e -> delayedFailFatal err400
+                  { errBody = cs $ "Error parsing header "
+                                   <> fromString headerName
+                                   <> " failed: " <> e
+                  }
+              Right header -> return $ Just header
 
 -- | If you use @'QueryParam' "author" Text@ in one of the endpoints for your API,
 -- this automatically requires your server-side handler to be a function
@@ -321,7 +334,8 @@ instance (KnownSymbol sym, FromHttpApiData a, HasServer api context)
             Just (Just v) ->
               case parseQueryParam v of
                   Left e -> delayedFailFatal err400
-                      { errBody = cs $ "Error parsing query parameter " <> paramname <> " failed: " <> e
+                      { errBody = cs $ "Error parsing query parameter "
+                                       <> paramname <> " failed: " <> e
                       }
 
                   Right param -> return $ Just param
@@ -364,7 +378,9 @@ instance (KnownSymbol sym, FromHttpApiData a, HasServer api context)
           case partitionEithers $ fmap parseQueryParam params of
               ([], parsed) -> return parsed
               (errs, _)    -> delayedFailFatal err400
-                  { errBody = cs $ "Error parsing query parameter(s) " <> paramname <> " failed: " <> T.intercalate ", " errs
+                  { errBody = cs $ "Error parsing query parameter(s) "
+                                   <> paramname <> " failed: "
+                                   <> T.intercalate ", " errs
                   }
         where
           params :: [T.Text]
@@ -415,7 +431,7 @@ instance (KnownSymbol sym, HasServer api context)
 -- > server = serveDirectory "/var/www/images"
 instance HasServer Raw context where
 
-  type ServerT Raw m = Application
+  type ServerT Raw m = Tagged m Application
 
   route Proxy _ rawApplication = RawRouter $ \ env request respond -> runResourceT $ do
     -- note: a Raw application doesn't register any cleanup
@@ -425,7 +441,7 @@ instance HasServer Raw context where
     liftIO $ go r request respond
 
     where go r request respond = case r of
-            Route app   -> app request (respond . Route)
+            Route app   -> untag app request (respond . Route)
             Fail a      -> respond $ Fail a
             FailFatal e -> respond $ FailFatal e
 
@@ -516,6 +532,24 @@ instance HasServer api context => HasServer (HttpVersion :> api) context where
 
   route Proxy context subserver =
     route (Proxy :: Proxy api) context (passToServer subserver httpVersion)
+
+-- | Singleton type representing a server that serves an empty API.
+data EmptyServer = EmptyServer deriving (Typeable, Eq, Show, Bounded, Enum)
+
+-- | Server for `EmptyAPI`
+emptyServer :: ServerT EmptyAPI m
+emptyServer = Tagged EmptyServer
+
+-- | The server for an `EmptyAPI` is `emptyAPIServer`.
+--
+-- > type MyApi = "nothing" :> EmptyApi
+-- >
+-- > server :: Server MyApi
+-- > server = emptyAPIServer
+instance HasServer EmptyAPI context where
+  type ServerT EmptyAPI m = Tagged m EmptyServer
+
+  route Proxy _ _ = StaticRouter mempty mempty
 
 -- | Basic Authentication
 instance ( KnownSymbol realm

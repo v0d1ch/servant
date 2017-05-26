@@ -42,14 +42,14 @@ import           Servant.API                ((:<|>) (..), (:>), AuthProtect,
                                              Headers, HttpVersion,
                                              IsSecure (..), JSON,
                                              NoContent (..), Patch, PlainText,
-                                             Post, Put,
+                                             Post, Put, EmptyAPI,
                                              QueryFlag, QueryParam, QueryParams,
                                              Raw, RemoteHost, ReqBody,
                                              StdMethod (..), Verb, addHeader)
 import           Servant.API.Internal.Test.ComprehensiveAPI
-import           Servant.Server             (Server, Handler, err401, err403,
+import           Servant.Server             (Server, Handler, Tagged (..), err401, err403,
                                              err404, serve, serveWithContext,
-                                             Context((:.), EmptyContext))
+                                             Context((:.), EmptyContext), emptyServer)
 import           Test.Hspec                 (Spec, context, describe, it,
                                              shouldBe, shouldContain)
 import qualified Test.Hspec.Wai             as THW
@@ -210,7 +210,7 @@ captureSpec = do
 
     with (return (serve
         (Proxy :: Proxy (Capture "captured" String :> Raw))
-        (\ "captured" request_ respond ->
+        (\ "captured" -> Tagged $ \request_ respond ->
             respond $ responseLBS ok200 [] (cs $ show $ pathInfo request_)))) $ do
       it "strips the captured path snippet from pathInfo" $ do
         get "/captured/foo" `shouldRespondWith` (fromString (show ["foo" :: String]))
@@ -262,7 +262,7 @@ captureAllSpec = do
 
     with (return (serve
         (Proxy :: Proxy (CaptureAll "segments" String :> Raw))
-        (\ _captured request_ respond ->
+        (\ _captured -> Tagged $ \request_ respond ->
             respond $ responseLBS ok200 [] (cs $ show $ pathInfo request_)))) $ do
       it "consumes everything from pathInfo" $ do
         get "/captured/foo/bar/baz" `shouldRespondWith` (fromString (show ([] :: [Int])))
@@ -477,6 +477,13 @@ headerSpec = describe "Servant.API.Header" $ do
         it "passes the header to the handler (String)" $
             delete' "/" "" `shouldRespondWith` 200
 
+    with (return (serve headerApi expectsInt)) $ do
+        let delete' x = THW.request methodDelete x [("MyHeader", "not a number")]
+
+        it "checks for parse errors" $
+            delete' "/" "" `shouldRespondWith` 400
+
+
 -- }}}
 ------------------------------------------------------------------------------
 -- * rawSpec {{{
@@ -487,9 +494,10 @@ type RawApi = "foo" :> Raw
 rawApi :: Proxy RawApi
 rawApi = Proxy
 
-rawApplication :: Show a => (Request -> a) -> Application
-rawApplication f request_ respond = respond $ responseLBS ok200 []
-    (cs $ show $ f request_)
+rawApplication :: Show a => (Request -> a) -> Tagged m Application
+rawApplication f = Tagged $ \request_ respond ->
+    respond $ responseLBS ok200 []
+        (cs $ show $ f request_)
 
 rawSpec :: Spec
 rawSpec = do
@@ -601,6 +609,7 @@ type MiscCombinatorsAPI
   =    "version" :> HttpVersion :> Get '[JSON] String
   :<|> "secure"  :> IsSecure :> Get '[JSON] String
   :<|> "host"    :> RemoteHost :> Get '[JSON] String
+  :<|> "empty"   :> EmptyAPI
 
 miscApi :: Proxy MiscCombinatorsAPI
 miscApi = Proxy
@@ -609,6 +618,7 @@ miscServ :: Server MiscCombinatorsAPI
 miscServ = versionHandler
       :<|> secureHandler
       :<|> hostHandler
+      :<|> emptyServer
 
   where versionHandler = return . show
         secureHandler Secure = return "secure"
@@ -627,6 +637,9 @@ miscCombinatorSpec = with (return $ serve miscApi miscServ) $
     it "Checks that hspec-wai issues request from 0.0.0.0" $
       go "/host" "\"0.0.0.0:0\""
 
+    it "Doesn't serve anything from the empty API" $
+      Test.Hspec.Wai.get "empty" `shouldRespondWith` 404
+
   where go path res = Test.Hspec.Wai.get path `shouldRespondWith` res
 
 -- }}}
@@ -644,7 +657,7 @@ basicAuthApi = Proxy
 basicAuthServer :: Server BasicAuthAPI
 basicAuthServer =
   const (return jerry) :<|>
-  (\ _ respond -> respond $ responseLBS imATeaPot418 [] "")
+  (Tagged $ \ _ respond -> respond $ responseLBS imATeaPot418 [] "")
 
 basicAuthContext :: Context '[ BasicAuthCheck () ]
 basicAuthContext =
@@ -689,7 +702,7 @@ genAuthApi = Proxy
 
 genAuthServer :: Server GenAuthAPI
 genAuthServer = const (return tweety)
-           :<|> (\ _ respond -> respond $ responseLBS imATeaPot418 [] "")
+           :<|> (Tagged $ \ _ respond -> respond $ responseLBS imATeaPot418 [] "")
 
 type instance AuthServerData (AuthProtect "auth") = ()
 

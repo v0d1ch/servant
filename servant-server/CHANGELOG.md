@@ -1,3 +1,18 @@
+0.11
+----
+
+### Breaking changes
+
+* Changed `HasServer` instances for `Header` to throw 400 when parsing fails
+  ([#724](https://github.com/haskell-servant/servant/pull/724))
+* Added `headersD` block to `Delayed`
+  ([#724](https://github.com/haskell-servant/servant/pull/724))
+
+### Other changes
+
+* Add `err418`, `err422` error codes
+  ([#739](https://github.com/haskell-servant/servant/pull/739))
+
 0.10
 ----
 
@@ -12,7 +27,7 @@
 
 ### Other changes
 
-* Added `paramD` block to `Delayed`
+* Added `paramsD` block to `Delayed`
 
 * Add `err422` Unprocessable Entity
   ([#646](https://github.com/haskell-servant/servant/pull/646))

@@ -111,6 +111,8 @@ type Api =
             Get '[JSON] (String, Maybe Int, Bool, [(String, [Rational])])
   :<|> "headers" :> Get '[JSON] (Headers TestHeaders Bool)
   :<|> "deleteContentType" :> DeleteNoContent '[JSON] NoContent
+  :<|> "empty" :> EmptyAPI
+
 api :: Proxy Api
 api = Proxy
 
@@ -122,14 +124,15 @@ getBody         :: Person -> SCR.ClientM Person
 getQueryParam   :: Maybe String -> SCR.ClientM Person
 getQueryParams  :: [String] -> SCR.ClientM [Person]
 getQueryFlag    :: Bool -> SCR.ClientM Bool
-getRawSuccess :: HTTP.Method 
+getRawSuccess :: HTTP.Method
   -> SCR.ClientM (Int, BS.ByteString, MediaType, [HTTP.Header], C.Response BS.ByteString)
-getRawFailure   :: HTTP.Method 
+getRawFailure   :: HTTP.Method
   -> SCR.ClientM (Int, BS.ByteString, MediaType, [HTTP.Header], C.Response BS.ByteString)
 getMultiple     :: String -> Maybe Int -> Bool -> [(String, [Rational])]
   -> SCR.ClientM (String, Maybe Int, Bool, [(String, [Rational])])
 getRespHeaders  :: SCR.ClientM (Headers TestHeaders Bool)
 getDeleteContentType :: SCR.ClientM NoContent
+
 getGet
   :<|> getDeleteEmpty
   :<|> getCapture
@@ -142,7 +145,8 @@ getGet
   :<|> getRawFailure
   :<|> getMultiple
   :<|> getRespHeaders
-  :<|> getDeleteContentType = client api
+  :<|> getDeleteContentType
+  :<|> EmptyClient = client api
 
 server :: Application
 server = serve api (
@@ -157,12 +161,12 @@ server = serve api (
                    Nothing -> throwError $ ServantErr 400 "missing parameter" "" [])
   :<|> (\ names -> return (zipWith Person names [0..]))
   :<|> return
-  :<|> (\ _request respond -> respond $ responseLBS HTTP.ok200 [] "rawSuccess")
-  :<|> (\ _request respond -> respond $ responseLBS HTTP.badRequest400 [] "rawFailure")
+  :<|> (Tagged $ \ _request respond -> respond $ responseLBS HTTP.ok200 [] "rawSuccess")
+  :<|> (Tagged $ \ _request respond -> respond $ responseLBS HTTP.badRequest400 [] "rawFailure")
   :<|> (\ a b c d -> return (a, b, c, d))
   :<|> (return $ addHeader 1729 $ addHeader "eg2" True)
   :<|> return NoContent
- )
+  :<|> emptyServer)
 
 
 type FailApi =
@@ -174,9 +178,9 @@ failApi = Proxy
 
 failServer :: Application
 failServer = serve failApi (
-       (\ _request respond -> respond $ responseLBS HTTP.ok200 [] "")
-  :<|> (\ _capture _request respond -> respond $ responseLBS HTTP.ok200 [("content-type", "application/json")] "")
-  :<|> (\_request respond -> respond $ responseLBS HTTP.ok200 [("content-type", "fooooo")] "")
+       (Tagged $ \ _request respond -> respond $ responseLBS HTTP.ok200 [] "")
+  :<|> (\ _capture -> Tagged $ \_request respond -> respond $ responseLBS HTTP.ok200 [("content-type", "application/json")] "")
+  :<|> (Tagged $ \_request respond -> respond $ responseLBS HTTP.ok200 [("content-type", "fooooo")] "")
  )
 
 -- * basic auth stuff
@@ -372,7 +376,7 @@ failSpec = beforeAll (startWaiApp failServer) $ afterAll endWaiApp $ do
         let (_ :<|> getDeleteEmpty :<|> _) = client api
         Left res <- runClientM getDeleteEmpty (ClientEnv manager baseUrl)
         case res of
-          FailureResponse (HTTP.Status 404 "Not Found") _ _ -> return ()
+          FailureResponse _ (HTTP.Status 404 "Not Found") _ _ -> return ()
           _ -> fail $ "expected 404 response, but got " <> show res
 
       it "reports DecodeFailure" $ \(_, baseUrl) -> do

@@ -25,6 +25,7 @@ type TestApi =
   :<|> "post" :> ReqBody '[JSON] 'True :> Post '[JSON] NoContent
   :<|> "delete" :> Header "ponies" String :> Delete '[JSON] NoContent
   :<|> "raw" :> Raw
+  :<|> NoEndpoint
 
 
 apiLink :: (IsElem endpoint TestApi, HasLink endpoint)
@@ -71,9 +72,11 @@ spec = describe "Servant.Utils.Links" $ do
 -- Before https://github.com/CRogers/should-not-typecheck/issues/5 is fixed,
 -- we'll just use doctest
 --
+-- with TypeError comparing for errors is difficult.
+--
 -- >>> apiLink (Proxy :: Proxy WrongPath)
 -- ...
--- ...Could not deduce...
+-- ......:...:...
 -- ...
 --
 -- >>> apiLink (Proxy :: Proxy WrongReturnType)
@@ -83,7 +86,7 @@ spec = describe "Servant.Utils.Links" $ do
 --
 -- >>> apiLink (Proxy :: Proxy WrongContentType)
 -- ...
--- ...Could not deduce...
+-- ......:...:...
 -- ...
 --
 -- >>> apiLink (Proxy :: Proxy WrongMethod)
@@ -96,6 +99,11 @@ spec = describe "Servant.Utils.Links" $ do
 -- ...Could not deduce...
 -- ...
 --
+-- >>> apiLink (Proxy :: Proxy NoEndpoint)
+-- ...
+-- ...No instance for...
+-- ...
+--
 -- sanity check
 -- >>> toUrlPiece $ apiLink (Proxy :: Proxy AllGood)
 -- "get"
@@ -105,3 +113,4 @@ type WrongContentType = "get" :> Get '[OctetStream] NoContent
 type WrongMethod = "get" :> Post '[JSON] NoContent
 type NotALink = "hello" :> ReqBody '[JSON] 'True :> Get '[JSON] Bool
 type AllGood = "get" :> Get '[JSON] NoContent
+type NoEndpoint = "empty" :> EmptyAPI

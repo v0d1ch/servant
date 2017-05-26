@@ -17,6 +17,8 @@ module Servant.Server
   , -- * Handlers for all standard combinators
     HasServer(..)
   , Server
+  , EmptyServer
+  , emptyServer
   , Handler (..)
   , runHandler
 
@@ -88,6 +90,8 @@ module Servant.Server
   , err415
   , err416
   , err417
+  , err418
+  , err422
    -- ** 5XX
   , err500
   , err501
@@ -98,10 +102,12 @@ module Servant.Server
 
   -- * Re-exports
   , Application
+  , Tagged (..)
 
   ) where
 
 import           Data.Proxy                    (Proxy)
+import           Data.Tagged                   (Tagged (..))
 import           Data.Text                     (Text)
 import           Network.Wai                   (Application)
 import           Servant.Server.Internal
@@ -207,17 +213,22 @@ layoutWithContext p context =
 -- monad. Or have your types ensure that your handlers don't do any IO. Enter
 -- `enter`.
 --
--- With `enter`, you can provide a function, wrapped in the `(:~>)` / `Nat`
+-- With `enter`, you can provide a function, wrapped in the `(:~>)` / `NT`
 -- newtype, to convert any number of endpoints from one type constructor to
 -- another. For example
 --
+-- /Note:/ 'Server' 'Raw' can also be entered. It will be retagged.
+--
 -- >>> import Control.Monad.Reader
 -- >>> import qualified Control.Category as C
--- >>> type ReaderAPI = "ep1" :> Get '[JSON] Int :<|> "ep2" :> Get '[JSON] String
--- >>> let readerServer = return 1797 :<|> ask :: ServerT ReaderAPI (Reader String)
--- >>> let mainServer = enter (generalizeNat C.. (runReaderTNat "hi")) readerServer :: Server ReaderAPI
+-- >>> type ReaderAPI = "ep1" :> Get '[JSON] Int :<|> "ep2" :> Get '[JSON] String :<|> Raw :<|> EmptyAPI
+-- >>> let readerServer = return 1797 :<|> ask :<|> Tagged (error "raw server") :<|> emptyServer :: ServerT ReaderAPI (Reader String)
+-- >>> let nt = generalizeNat C.. (runReaderTNat "hi") :: Reader String :~> Handler
+-- >>> let mainServer = enter nt readerServer :: Server ReaderAPI
 --
 
 -- $setup
+-- >>> :set -XDataKinds
+-- >>> :set -XTypeOperators
 -- >>> import Servant.API
 -- >>> import Servant.Server
