@@ -13,7 +13,6 @@
 {-# LANGUAGE TypeOperators              #-}
 {-# LANGUAGE UndecidableInstances       #-}
 {-# LANGUAGE DeriveGeneric              #-}
-{-# LANGUAGE DeriveAnyClass             #-}
 
 module Servant.Server.Internal.RoutingApplication where
 
@@ -26,7 +25,6 @@ import           Control.Monad.Trans.Control        (ComposeSt, MonadBaseControl
                                                      defaultLiftBaseWith, defaultRestoreM)
 import           Control.Monad.Trans.Resource       (MonadResource (..), ResourceT, runResourceT, transResourceT)
 import           Control.DeepSeq
-import           GHC.Generics (Generic)
 import           Network.Wai                        (Application, Request, Response, ResponseReceived)
 import           Prelude                            ()
 import           Prelude.Compat
@@ -43,7 +41,7 @@ data RouteResult a =
                               -- should only be 404, 405 or 406.
   | FailFatal !ServantErr     -- ^ Don't try other paths.
   | Route !a
-  deriving (Eq, Show, Read, Functor, NFData, Generic)
+  deriving (Eq, Show, Read, Functor)
 
 instance Applicative RouteResult where
     pure = return
@@ -54,6 +52,12 @@ instance Monad RouteResult where
     Route a     >>= f = f a
     Fail e      >>= _ = Fail e
     FailFatal e >>= _ = FailFatal e
+
+instance NFData a =>  NFData (RouteResult a) where
+  rnf (Route a)     =  rnf a
+  rnf (Fail a)      =  rnf a
+  rnf (FailFatal a) =  rnf a
+
 
 newtype RouteResultT m a = RouteResultT { runRouteResultT :: m (RouteResult a) }
   deriving (Functor)
