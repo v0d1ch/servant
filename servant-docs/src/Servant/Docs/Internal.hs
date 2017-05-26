@@ -233,9 +233,6 @@ defResponse = Response
   , _respHeaders = []
   }
 
-instance NFData Response where
-    rnf a = seq a ()
-
 -- | A datatype that represents everything that can happen
 -- at an endpoint, with its lenses:
 --
